@@ -6,7 +6,7 @@
 - tkinterベース
 - ログ日付の区切りは 04:00 AM
 - UIサイズは通常/4倍のトグル
-- 10レーンの (TAG / SUB_TAG / テキスト / 音声入力)
+- 10レーンの (TAG / SUB_TAG / テキスト)
 - LLM質問エリア（表示切替、OpenAI RESTを標準ライブラリで直接叩く）
 - 設定/ログパスの明示、プレビュー付き
 """
@@ -25,13 +25,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-# Windows/COM（音声入力用；利用可能な場合のみ）
-try:
-    import win32com.client  # noqa: WPS433 - 許可モジュール
-    import pythoncom  # noqa: WPS433 - pywin32の一部
-    HAS_WIN32 = True
-except Exception:
-    HAS_WIN32 = False
+#
 
 # GUI
 import tkinter as tk
@@ -82,7 +76,7 @@ BTN_SCALE_TEXT = "サイズ変更"
 BTN_REGISTER_TEXT = "登録"
 LLM_TOGGLE_TEXT = "LLMエリアを表示"
 LLM_SEND_TEXT = "送信"
-VOICE_BTN_TEXT = "🎤"
+#
 
 # 例外処理用：出力先ラベル
 ERROR_DIALOG_TITLE = "エラー"
@@ -531,81 +525,7 @@ class LogManager:
             return ""
 
 
-class VoiceRecognizer:
-    """
-    Windows SAPI を用いた簡易音声入力（環境依存）。
-    - 利用可能な場合のみ有効化。
-    - Tkのイベントループと干渉しないよう、定期ポンピングでイベント処理。
-
-    Usage:
-        vr = VoiceRecognizer(on_text=callback)
-        vr.start() / vr.stop()
-    """
-
-    def __init__(self, on_text: Callable[[str], None]) -> None:
-        self.on_text = on_text
-        self.enabled = HAS_WIN32
-        self._context = None
-        self._grammar = None
-        self._running = False
-
-        if not HAS_WIN32:
-            return
-
-        try:
-            # In-Proc Recognizer（共有でも可）
-            self._recognizer = win32com.client.Dispatch("SAPI.SpInprocRecognizer")
-            self._context = self._recognizer.CreateRecoContext()
-            self._context.EventInterests = 1 | 2  # EndStream | SoundStart/End等（簡略）
-            self._events = win32com.client.WithEvents(self._context, self._ContextEvents)
-            self._events.set_parent(self)
-            self._grammar = self._context.CreateGrammar()
-            self._grammar.DictationLoad()
-        except Exception:
-            self.enabled = False
-
-    class _ContextEvents:  # noqa: D401
-        """ISpeechRecoContextEvents の簡易ハンドラ"""
-
-        def set_parent(self, parent: "VoiceRecognizer") -> None:
-            self._parent = parent
-
-        def OnRecognition(self, StreamNumber, StreamPosition, RecognitionType, Result) -> None:  # noqa: N802
-            try:
-                text = Result.PhraseInfo.GetText()
-                if self._parent and self._parent.on_text:
-                    self._parent.on_text(text)
-            except Exception:
-                pass
-
-    def start(self) -> None:
-        if not self.enabled or self._running:
-            return
-        try:
-            self._grammar.DictationSetState(1)  # SGDSActive
-            self._running = True
-        except Exception:
-            self.enabled = False
-            self._running = False
-
-    def stop(self) -> None:
-        if not self.enabled or not self._running:
-            return
-        try:
-            self._grammar.DictationSetState(0)  # SGDSInactive
-            self._running = False
-        except Exception:
-            self._running = False
-
-    @staticmethod
-    def pump_once() -> None:
-        """COMメッセージを1回だけ処理（Tkのafterで定期呼び出し）"""
-        if not HAS_WIN32:
-            return
-        try:
-            pythoncom.PumpWaitingMessages()
-        except Exception:
-            pass
+## 音声機能は廃止しました
 
 
 class LLMClient:
@@ -666,7 +586,7 @@ class LLMClient:
 
 class Lane:
     """
-    1レーン分のUI（TAG/SUB_TAG/テキスト/🎤）と値取得ロジック。
+    1レーン分のUI（TAG/SUB_TAG/テキスト）と値取得ロジック。
 
     Examples:
         >>> # GUIコンテキスト内で利用
@@ -677,14 +597,12 @@ class Lane:
         master: tk.Widget,
         tags_map: Dict[str, List[str]],
         font: tkfont.Font,
-        on_voice: Callable[[int], None],
         on_register: Callable[[int], None],
         lane_index: int,
     ) -> None:
         self.master = master
         self.tags_map = tags_map
         self.font = font
-        self.on_voice = on_voice
         self.on_register = on_register
         self.index = lane_index
 
@@ -712,12 +630,11 @@ class Lane:
         self.ent.bind("<Return>", self._on_entry_return)
         self.ent.bind("<KP_Enter>", self._on_entry_return)
 
-        self.btn_voice = ttk.Button(self.frm, text=VOICE_BTN_TEXT, width=3, command=self._voice_click, style="App.TButton")
-        self.btn_voice.grid(row=0, column=3, padx=2, pady=2)
+        # 音声ボタンは廃止
 
         # 各行の登録ボタン
         self.btn_reg = ttk.Button(self.frm, text=BTN_REGISTER_TEXT, command=lambda: self.on_register(self.index), style="App.TButton")
-        self.btn_reg.grid(row=0, column=4, padx=2, pady=2)
+        self.btn_reg.grid(row=0, column=3, padx=2, pady=2)
 
         # フォントはスタイル経由で適用済み
 
@@ -749,10 +666,7 @@ class Lane:
         self.cb_sub["values"] = subs
         self.var_sub.set(subs[0])
 
-    def _voice_click(self) -> None:
-        # 親（MainApp）側で該当レーンのエントリに音声テキストを注入
-        if self.on_voice:
-            self.on_voice(self.index)
+    # 音声機能は廃止
 
     def _on_entry_return(self, event: tk.Event) -> str:  # type: ignore[name-defined]
         """エントリ内でEnter押下時にこのレーンを登録する。"""
@@ -786,6 +700,8 @@ class Lane:
             cur += " "
         self.var_text.set(cur + extra)
 
+    # 音声機能は廃止
+
 
 class MainApp:
     """
@@ -813,9 +729,7 @@ class MainApp:
         self.style = ttk.Style(self.root)
         self._configure_widget_styles()
 
-        # 音声認識
-        self.active_voice_lane: Optional[int] = None
-        self.voice_recognizer = VoiceRecognizer(on_text=self._on_voice_text)
+        # 音声機能は廃止
 
         # LLM
         self.llm_cli: Optional[LLMClient] = None
@@ -831,7 +745,7 @@ class MainApp:
 
         self._refresh_log_preview()
         self._update_datetime_loop()
-        self._pump_voice_loop()
+        # 音声機能は廃止のためポンプは無し
 
     # ====== UI構築 ======
     def _reconfigure_fonts(self) -> None:
@@ -902,6 +816,8 @@ class MainApp:
         btn_scale = ttk.Button(frm, text=BTN_SCALE_TEXT, command=self._toggle_scale)
         btn_scale.grid(row=0, column=1, sticky="w", padx=8)
 
+        # 音声関連UIは廃止
+
     def _build_input_area(self) -> None:
         outer = ttk.LabelFrame(self.root, text="入力エリア（TAG / SUB_TAG / テキスト）")
         outer.pack(fill="x", padx=8, pady=6)
@@ -914,7 +830,6 @@ class MainApp:
                 outer,
                 tags_map=tags_map,
                 font=self.font_base,
-                on_voice=self._voice_click_from_lane,
                 on_register=self._on_register_lane,
                 lane_index=i,
             )
@@ -1150,36 +1065,7 @@ class MainApp:
         finally:
             self.root.after(500, self._update_datetime_loop)
 
-    # ====== 音声入力 ======
-    def _voice_click_from_lane(self, idx: int) -> None:
-        if not self.voice_recognizer.enabled:
-            messagebox.showinfo(INFO_DIALOG_TITLE, "音声入力はこの環境では利用できません。")
-            return
-        # トグル：同じレーンで押されたら停止、別レーンなら切替
-        if self.active_voice_lane == idx:
-            self.voice_recognizer.stop()
-            self.active_voice_lane = None
-            messagebox.showinfo(INFO_DIALOG_TITLE, f"音声入力を停止しました（レーン{idx + 1}）。")
-        else:
-            self.voice_recognizer.start()
-            self.active_voice_lane = idx
-            messagebox.showinfo(INFO_DIALOG_TITLE, f"音声入力を開始しました（レーン{idx + 1}）。話しかけてください。")
-
-    def _on_voice_text(self, text: str) -> None:
-        if self.active_voice_lane is None:
-            return
-        if 0 <= self.active_voice_lane < len(self.lanes):
-            self.lanes[self.active_voice_lane].append_text(text)
-
-    def _pump_voice_loop(self) -> None:
-        try:
-            # 音声入力が稼働中のときのみCOMメッセージを処理
-            if self.voice_recognizer.enabled and self.active_voice_lane is not None:
-                VoiceRecognizer.pump_once()
-        except Exception:
-            pass
-        finally:
-            self.root.after(50, self._pump_voice_loop)
+    # 音声機能は廃止
 
     # ====== LLM ======
     def _prepare_llm_client(self) -> None:
@@ -1233,8 +1119,6 @@ class MainApp:
     def _on_exit(self) -> None:
         try:
             self.running = False
-            if self.voice_recognizer:
-                self.voice_recognizer.stop()
             self.root.destroy()
         except Exception:
             os._exit(0)  # noqa: WPS437
