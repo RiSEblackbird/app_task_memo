@@ -25,8 +25,6 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-#
-
 # GUI
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
@@ -49,10 +47,9 @@ MONO_FONT_FAMILY: str = "Consolas"
 MONO_FONT_SIZE: int = 10
 MONO_FONT_SIZE_LARGE: int = 12
 
-# UIスケール（未使用：固定フォントで対応）
 
 # レーン数
-LANE_COUNT: int = 10
+LANE_COUNT: int = 5
 
 # LLM既定
 DEFAULT_LLM_PROVIDER: str = "openai"
@@ -525,7 +522,6 @@ class LogManager:
             return ""
 
 
-## 音声機能は廃止しました
 
 
 class LLMClient:
@@ -630,7 +626,6 @@ class Lane:
         self.ent.bind("<Return>", self._on_entry_return)
         self.ent.bind("<KP_Enter>", self._on_entry_return)
 
-        # 音声ボタンは廃止
 
         # 各行の登録ボタン
         self.btn_reg = ttk.Button(self.frm, text=BTN_REGISTER_TEXT, command=lambda: self.on_register(self.index), style="App.TButton")
@@ -666,7 +661,6 @@ class Lane:
         self.cb_sub["values"] = subs
         self.var_sub.set(subs[0])
 
-    # 音声機能は廃止
 
     def _on_entry_return(self, event: tk.Event) -> str:  # type: ignore[name-defined]
         """エントリ内でEnter押下時にこのレーンを登録する。"""
@@ -700,7 +694,6 @@ class Lane:
             cur += " "
         self.var_text.set(cur + extra)
 
-    # 音声機能は廃止
 
 
 class MainApp:
@@ -729,7 +722,6 @@ class MainApp:
         self.style = ttk.Style(self.root)
         self._configure_widget_styles()
 
-        # 音声機能は廃止
 
         # LLM
         self.llm_cli: Optional[LLMClient] = None
@@ -745,7 +737,7 @@ class MainApp:
 
         self._refresh_log_preview()
         self._update_datetime_loop()
-        # 音声機能は廃止のためポンプは無し
+
 
     # ====== UI構築 ======
     def _reconfigure_fonts(self) -> None:
@@ -816,7 +808,6 @@ class MainApp:
         btn_scale = ttk.Button(frm, text=BTN_SCALE_TEXT, command=self._toggle_scale)
         btn_scale.grid(row=0, column=1, sticky="w", padx=8)
 
-        # 音声関連UIは廃止
 
     def _build_input_area(self) -> None:
         outer = ttk.LabelFrame(self.root, text="入力エリア（TAG / SUB_TAG / テキスト）")
@@ -886,7 +877,7 @@ class MainApp:
         self.llm_frame_outer = outer
 
         # 表示切替（常に表示）
-        self.var_llm_visible = tk.BooleanVar(value=True)
+        self.var_llm_visible = tk.BooleanVar(value=False)
         chk = ttk.Checkbutton(outer, text=LLM_TOGGLE_TEXT, variable=self.var_llm_visible, command=self._update_llm_visible)
         chk.grid(row=0, column=0, sticky="w", padx=4, pady=2)
 
@@ -1065,7 +1056,6 @@ class MainApp:
         finally:
             self.root.after(500, self._update_datetime_loop)
 
-    # 音声機能は廃止
 
     # ====== LLM ======
     def _prepare_llm_client(self) -> None:
