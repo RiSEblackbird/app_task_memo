@@ -6,7 +6,7 @@
 - tkinterベース
 - ログ日付の区切りは 04:00 AM
 - UIサイズは通常/4倍のトグル
-- 10レーンの (TAG / SUB_TAG / テキスト)
+- レーン数は設定可能（既定5）の (TAG / SUB_TAG / テキスト)
 - LLM質問エリア（表示切替、OpenAI RESTを標準ライブラリで直接叩く）
 - 設定/ログパスの明示、プレビュー付き
 """
@@ -48,8 +48,8 @@ MONO_FONT_SIZE: int = 10
 MONO_FONT_SIZE_LARGE: int = 12
 
 
-# レーン数
-LANE_COUNT: int = 5
+# レーン数（既定値。実際の使用数は設定 YAML の LANE_COUNT で上書き可能）
+DEFAULT_LANE_COUNT: int = 5
 
 # LLM既定
 DEFAULT_LLM_PROVIDER: str = "openai"
@@ -347,6 +347,8 @@ class ConfigManager:
         data.setdefault("LLM_TIMEOUT", str(DEFAULT_LLM_TIMEOUT))
         data.setdefault("OPENAI_API_KEY_ENV", DEFAULT_OPENAI_KEY_ENV)
         data.setdefault("OPENAI_API_KEY", "")
+        # レーン数（YAMLのスカラーは文字列になり得るため、後段で int 化）
+        data.setdefault("LANE_COUNT", str(DEFAULT_LANE_COUNT))
 
         # 数値系はint化（SimpleYAMLは文字列で返すため）
         try:
@@ -357,6 +359,14 @@ class ConfigManager:
             data["LLM_TIMEOUT"] = int(data["LLM_TIMEOUT"])
         except Exception:
             data["LLM_TIMEOUT"] = DEFAULT_LLM_TIMEOUT
+        # レーン数の int 化と簡易バリデーション（1以上）
+        try:
+            lane_cnt = int(data.get("LANE_COUNT", DEFAULT_LANE_COUNT))
+            if lane_cnt < 1:
+                lane_cnt = DEFAULT_LANE_COUNT
+            data["LANE_COUNT"] = lane_cnt
+        except Exception:
+            data["LANE_COUNT"] = DEFAULT_LANE_COUNT
 
         # ログディレクトリの解決
         # - 空（または不正型）の場合は実行ファイルと同じ階層にする
@@ -413,7 +423,7 @@ class ConfigManager:
 
     @property
     def main_tags(self) -> List[str]:
-        return list(self.config.get("MAIN_TAG", []))[:LANE_COUNT]
+        return list(self.config.get("MAIN_TAG", []))[: self.lane_count]
 
     @property
     def base_prompts(self) -> Dict[str, str]:
@@ -451,6 +461,14 @@ class ConfigManager:
             return key
         env_name = self.config.get("OPENAI_API_KEY_ENV", DEFAULT_OPENAI_KEY_ENV)
         return os.environ.get(env_name, "").strip()
+
+    @property
+    def lane_count(self) -> int:
+        """入力レーン数（設定値。未設定/不正時は既定値）。"""
+        try:
+            return int(self.config.get("LANE_COUNT", DEFAULT_LANE_COUNT))
+        except Exception:
+            return DEFAULT_LANE_COUNT
 
 
 class LogManager:
@@ -816,7 +834,8 @@ class MainApp:
         self.lanes: List[Lane] = []
         tags_map = self.cfg.tags_map
 
-        for i in range(LANE_COUNT):
+        lane_total = self.cfg.lane_count
+        for i in range(lane_total):
             lane = Lane(
                 outer,
                 tags_map=tags_map,

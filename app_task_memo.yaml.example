@@ -1,5 +1,6 @@
 LOG_DIR: "task_log"
 USER_NAME: "User"
+LANE_COUNT: 5
 MAIN_TAG: []
 TAGS:
   生活:
