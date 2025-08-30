@@ -59,7 +59,7 @@ DEFAULT_LLM_TIMEOUT: int = 60
 DEFAULT_OPENAI_KEY_ENV: str = "OPENAI_API_KEY"
 
 # テキストの角括弧付き最小幅（例: "[TAG____]"）
-BRACKET_MIN_WIDTH: int = 8
+BRACKET_MIN_WIDTH: int = 5
 
 # JST
 TZ_JST = ZoneInfo("Asia/Tokyo")
