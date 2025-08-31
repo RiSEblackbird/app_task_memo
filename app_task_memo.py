@@ -1,5 +1,5 @@
-# app_task_memo.py
 # -*- coding: utf-8 -*-
+# アプリ名: 0. 作業メモ用デスクトップアプリ
 
 """
 作業メモ用デスクトップアプリ（Windows 11 / Python 3.12）
