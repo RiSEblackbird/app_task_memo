@@ -62,6 +62,8 @@ TZ_JST = ZoneInfo("Asia/Tokyo")
 
 # 曜日3文字
 DOW3 = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+# 追加: 日本語曜日（表示用）
+DOW_JA = ["月", "火", "水", "木", "金", "土", "日"]
 
 # メニュー等の文言
 TITLE_TEXT = "Task Memo（作業メモ）"
@@ -69,6 +71,8 @@ BTN_SCALE_TEXT = "サイズ変更"
 BTN_REGISTER_TEXT = "登録"
 LLM_TOGGLE_TEXT = "LLMエリアを表示"
 LLM_SEND_TEXT = "送信"
+# 追加: ログエクスプローラー
+BTN_LOG_EXPLORER_TEXT = "ログエクスプローラー"
 #
 
 # 例外処理用：出力先ダイアログ
@@ -169,6 +173,20 @@ def yyyymmdd_dow(dt: Optional[datetime] = None) -> str:
 	ymd = dt.strftime("%Y%m%d")
 	dow = DOW3[dt.weekday()]
 	return f"{ymd}_{dow}"
+
+
+def format_date_jp(dt: Optional[datetime] = None) -> str:
+	"""
+	日本語の年月日 + 曜日を返す。
+
+	Examples:
+		>>> s = format_date_jp(datetime(2025, 9, 7, tzinfo=TZ_JST))
+		>>> s
+		'《2025年9月7日(日)》'
+	"""
+	if dt is None:
+		dt = now_jst()
+	return f"《{dt.year}年{dt.month}月{dt.day}日({DOW_JA[dt.weekday()]})》"
 
 
 class SimpleYAML:
@@ -523,6 +541,88 @@ class LogManager:
 		except Exception:
 			return ""
 
+	# 追加: 日付指定でパスを取得（副作用なし）
+	def get_log_path_for_date(self, dt: datetime) -> str:
+		return os.path.join(
+			self.cfg.log_dir,
+			f"{APP_BASENAME}_{yyyymmdd_dow(dt)}.log",
+		)
+
+	# 追加: 日付指定でテキストを読む（存在しなければ空文字）
+	def read_text_for_date(self, dt: datetime, tail_kb: int = 512) -> str:
+		path = self.get_log_path_for_date(dt)
+		try:
+			size = os.path.getsize(path)
+			start = max(0, size - tail_kb * 1024)
+			with io.open(path, "r", encoding="utf-8_sig", errors="ignore") as f:
+				if start:
+					f.seek(start)
+					f.readline()
+				return f.read()
+		except Exception:
+			return ""
+
+
+class LogExplorerDialog(QtWidgets.QDialog):
+	"""
+	ログエクスプローラーウインドウ。
+
+	- 「⇦」「⇨」で日付移動
+ 	- 中央に対象ログ日付を日本語表示（例: 《2025年9月7日(日)》）
+ 	- 下部にログ簡易表示
+	"""
+
+	def __init__(self, parent: QtWidgets.QWidget, logman: LogManager) -> None:
+		super().__init__(parent)
+		self.setWindowTitle("ログエクスプローラー")
+		self.logman = logman
+		self.cur_dt: datetime = effective_date(now_jst())
+
+		root = QtWidgets.QWidget(self)
+		lay = QtWidgets.QVBoxLayout(root)
+		lay.setContentsMargins(8, 8, 8, 8)
+		lay.setSpacing(8)
+		self.setLayout(lay)
+
+		# 上部: ナビゲーション
+		top = QtWidgets.QWidget(root)
+		top_l = QtWidgets.QGridLayout(top)
+		top_l.setContentsMargins(0, 0, 0, 0)
+		self.btn_prev = QtWidgets.QPushButton("⇦", top)
+		self.btn_next = QtWidgets.QPushButton("⇨", top)
+		self.lbl_date = QtWidgets.QLabel("", top)
+		self.lbl_date.setAlignment(QtCore.Qt.AlignCenter)
+		self.lbl_date.setFont(QtGui.QFont(BASE_FONT_FAMILY, BASE_FONT_SIZE))
+		top_l.addWidget(self.btn_prev, 0, 0)
+		top_l.addWidget(self.lbl_date, 0, 1)
+		top_l.addWidget(self.btn_next, 0, 2)
+		top_l.setColumnStretch(1, 1)
+		lay.addWidget(top)
+
+		# 本文: ログプレビュー
+		self.txt = QtWidgets.QPlainTextEdit(root)
+		self.txt.setReadOnly(False)
+		self.txt.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+		self.txt.setFont(QtGui.QFont(MONO_FONT_FAMILY, MONO_FONT_SIZE))
+		lay.addWidget(self.txt)
+
+		# シグナル
+		self.btn_prev.clicked.connect(lambda: self._shift_date(-1))
+		self.btn_next.clicked.connect(lambda: self._shift_date(1))
+
+		# 初期表示
+		self._refresh()
+		self.resize(800, 600)
+
+	def _shift_date(self, delta_days: int) -> None:
+		self.cur_dt = self.cur_dt + timedelta(days=delta_days)
+		self._refresh()
+
+	def _refresh(self) -> None:
+		self.lbl_date.setText(format_date_jp(self.cur_dt))
+		text = self.logman.read_text_for_date(self.cur_dt)
+		self.txt.setPlainText(text)
+
 
 class LLMClient:
 	"""
@@ -717,6 +817,9 @@ class MainWindow(QtWidgets.QMainWindow):
 		self.font_base = QtGui.QFont(BASE_FONT_FAMILY, BASE_FONT_SIZE)
 		self.font_mono = QtGui.QFont(MONO_FONT_FAMILY, MONO_FONT_SIZE)
 
+		# ログエクスプローラー
+		self._log_explorer: Optional[LogExplorerDialog] = None
+
 		# UI構築
 		self._build_menu()
 		self._build_central()
@@ -783,17 +886,21 @@ class MainWindow(QtWidgets.QMainWindow):
 		vbox.setContentsMargins(8, 8, 8, 8)
 		vbox.setSpacing(8)
 
-		# 上段: 現在日時 と サイズ変更ボタン
+		# 上段: 現在日時 / ログエクスプローラー / サイズ変更ボタン
 		top = QtWidgets.QWidget(root)
 		top_l = QtWidgets.QGridLayout(top)
 		top_l.setContentsMargins(0, 0, 0, 0)
 		self.lbl_now = QtWidgets.QLabel("", top)
 		self.lbl_now.setFont(self.font_base)
+		btn_explorer = QtWidgets.QPushButton(BTN_LOG_EXPLORER_TEXT, top)
+		btn_explorer.setFont(self.font_base)
+		btn_explorer.clicked.connect(self._open_log_explorer)
 		btn_scale = QtWidgets.QPushButton(BTN_SCALE_TEXT, top)
 		btn_scale.setFont(self.font_base)
 		btn_scale.clicked.connect(self._toggle_scale)
 		top_l.addWidget(self.lbl_now, 0, 0, 1, 1)
-		top_l.addWidget(btn_scale, 0, 1, 1, 1)
+		top_l.addWidget(btn_explorer, 0, 1, 1, 1)
+		top_l.addWidget(btn_scale, 0, 2, 1, 1)
 		top_l.setColumnStretch(0, 1)
 		vbox.addWidget(top)
 
@@ -836,14 +943,27 @@ class MainWindow(QtWidgets.QMainWindow):
 		vbox.addWidget(prev_group)
 
 		# 下段: パス表示
-		bottom = QtWidgets.QWidget(root)
-		bottom_l = QtWidgets.QGridLayout(bottom)
-		bottom_l.setContentsMargins(0, 0, 0, 0)
-		self.lbl_cfg = QtWidgets.QLabel(f"設定: {self.cfg.cfg_path}", bottom)
-		self.lbl_log = QtWidgets.QLabel(f"ログ: {self.logman.current_log_path}", bottom)
-		bottom_l.addWidget(self.lbl_cfg, 0, 0, 1, 1)
-		bottom_l.addWidget(self.lbl_log, 1, 0, 1, 1)
-		vbox.addWidget(bottom)
+		# 折りたたみトグル
+		self.btn_paths = QtWidgets.QToolButton(root)
+		self.btn_paths.setText("設定/ログのパスを表示")
+		self.btn_paths.setCheckable(True)
+		self.btn_paths.setChecked(False)
+		self.btn_paths.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+		self.btn_paths.setArrowType(QtCore.Qt.RightArrow)
+		vbox.addWidget(self.btn_paths)
+
+		# 折りたたみコンテンツ
+		self.paths_container = QtWidgets.QWidget(root)
+		paths_l = QtWidgets.QGridLayout(self.paths_container)
+		paths_l.setContentsMargins(0, 0, 0, 0)
+		self.lbl_cfg = QtWidgets.QLabel(f"設定: {self.cfg.cfg_path}", self.paths_container)
+		self.lbl_log = QtWidgets.QLabel(f"ログ: {self.logman.current_log_path}", self.paths_container)
+		paths_l.addWidget(self.lbl_cfg, 0, 0, 1, 1)
+		paths_l.addWidget(self.lbl_log, 1, 0, 1, 1)
+		self.paths_container.setVisible(False)
+		vbox.addWidget(self.paths_container)
+
+		self.btn_paths.toggled.connect(self._on_toggle_paths)
 
 		# LLM 質問エリア
 		llm_group = QtWidgets.QGroupBox("LLM質問エリア（表示切替可能）", root)
@@ -918,6 +1038,25 @@ class MainWindow(QtWidgets.QMainWindow):
 		vis = self.chk_llm_visible.isChecked()
 		self.llm_content.setVisible(vis)
 
+	def _on_toggle_paths(self, checked: bool) -> None:
+		try:
+			self.paths_container.setVisible(checked)
+			self.btn_paths.setArrowType(QtCore.Qt.DownArrow if checked else QtCore.Qt.RightArrow)
+		except Exception:
+			pass
+
+	def _open_log_explorer(self) -> None:
+		try:
+			if self._log_explorer is None or not self._log_explorer.isVisible():
+				self._log_explorer = LogExplorerDialog(self, self.logman)
+				self._apply_fonts_recursive(self._log_explorer)
+				self._log_explorer.show()
+			else:
+				self._log_explorer.activateWindow()
+				self._log_explorer.raise_()
+		except Exception:
+			QtWidgets.QMessageBox.critical(self, ERROR_DIALOG_TITLE, get_exception_trace())
+
 	def _open_config_folder(self) -> None:
 		path = self.cfg.cfg_path
 		try:
@@ -951,6 +1090,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		try:
 			self.logman.append_lines(out)
 			self._refresh_log_preview()
+			self._scroll_preview_to_bottom()
 			# 成功時は各行のテキストだけクリア（タグは維持）
 			for lane in self.lanes:
 				lane.le_text.setText("")
@@ -969,6 +1109,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		try:
 			self.logman.append_lines([f"{ts} {part}"])
 			self._refresh_log_preview()
+			self._scroll_preview_to_bottom()
 			lane.le_text.setText("")
 		except Exception:
 			QtWidgets.QMessageBox.critical(self, ERROR_DIALOG_TITLE, get_exception_trace())
@@ -979,6 +1120,13 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.txt_preview.setPlainText(self.logman.read_text())
 		finally:
 			self.txt_preview.blockSignals(False)
+
+	def _scroll_preview_to_bottom(self) -> None:
+		try:
+			self.txt_preview.moveCursor(QtGui.QTextCursor.End)
+			self.txt_preview.ensureCursorVisible()
+		except Exception:
+			pass
 
 	def _update_datetime(self) -> None:
 		try:
