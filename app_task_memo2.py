@@ -38,10 +38,12 @@ CUTOFF_HOUR: int = 4
 # フォント基準（固定サイズ運用）
 BASE_FONT_FAMILY: str = "Yu Gothic UI"
 BASE_FONT_SIZE: int = 10  # 通常時
-BASE_FONT_SIZE_LARGE: int = 12  # サイズ変更時
+BASE_FONT_SIZE_LARGE: int = 12  # 大
 MONO_FONT_FAMILY: str = "Consolas"
 MONO_FONT_SIZE: int = 10
 MONO_FONT_SIZE_LARGE: int = 12
+BASE_FONT_SIZE_LARGE_MORE: int = 18  # 特大
+MONO_FONT_SIZE_LARGE_MORE: int = 16
 
 
 # レーン数（既定値。実際の使用数は設定 YAML の LANE_COUNT で上書き可能）
@@ -809,7 +811,7 @@ class MainWindow(QtWidgets.QMainWindow):
 		# 変数初期化（メイン処理冒頭で初期化ルール遵守）
 		self.cfg = ConfigManager()
 		self.logman = LogManager(self.cfg)
-		self.is_large = False
+		self.scale_level = 0  # 0: 通常, 1: 大, 2: 特大
 
 		self.setWindowTitle(TITLE_TEXT)
 
@@ -843,8 +845,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
 	# ====== UI構築 ======
 	def _reconfigure_fonts(self) -> None:
-		base_size = BASE_FONT_SIZE_LARGE if self.is_large else BASE_FONT_SIZE
-		mono_size = MONO_FONT_SIZE_LARGE if self.is_large else MONO_FONT_SIZE
+		if self.scale_level == 0:
+			base_size = BASE_FONT_SIZE
+			mono_size = MONO_FONT_SIZE
+		elif self.scale_level == 1:
+			base_size = BASE_FONT_SIZE_LARGE
+			mono_size = MONO_FONT_SIZE_LARGE
+		else:
+			base_size = BASE_FONT_SIZE_LARGE_MORE
+			mono_size = MONO_FONT_SIZE_LARGE_MORE
 		self.font_base.setPointSize(base_size)
 		self.font_mono.setPointSize(mono_size)
 
@@ -1072,7 +1081,7 @@ class MainWindow(QtWidgets.QMainWindow):
 			QtWidgets.QMessageBox.information(self, INFO_DIALOG_TITLE, f"エクスプローラーで開けませんでした。\n{path}")
 
 	def _toggle_scale(self) -> None:
-		self.is_large = not self.is_large
+		self.scale_level = (self.scale_level + 1) % 3
 		self._reconfigure_fonts()
 		self.updateGeometry()
 		self.adjustSize()
