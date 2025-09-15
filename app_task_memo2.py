@@ -907,9 +907,14 @@ class MainWindow(QtWidgets.QMainWindow):
 		btn_scale = QtWidgets.QPushButton(BTN_SCALE_TEXT, top)
 		btn_scale.setFont(self.font_base)
 		btn_scale.clicked.connect(self._toggle_scale)
+		# 追加: 常に手前チェックボックス（サイズ変更ボタンの右）
+		self.chk_topmost = QtWidgets.QCheckBox("常に手前", top)
+		self.chk_topmost.setChecked(False)
+		self.chk_topmost.toggled.connect(self._on_topmost_toggled)
 		top_l.addWidget(self.lbl_now, 0, 0, 1, 1)
 		top_l.addWidget(btn_explorer, 0, 1, 1, 1)
 		top_l.addWidget(btn_scale, 0, 2, 1, 1)
+		top_l.addWidget(self.chk_topmost, 0, 3, 1, 1)
 		top_l.setColumnStretch(0, 1)
 		vbox.addWidget(top)
 
@@ -1203,6 +1208,12 @@ class MainWindow(QtWidgets.QMainWindow):
 			self.close()
 		except Exception:
 			os._exit(0)  # noqa: WPS437
+
+	# ====== 常に手前 ======
+	def _on_topmost_toggled(self, checked: bool) -> None:
+		self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, bool(checked))
+		# 反映のため再表示
+		self.show()
 
 
 def run_app() -> None:
